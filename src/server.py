@@ -1,10 +1,18 @@
 import socket
+
 address = ('localhost', 8000)
 BUFFSIZE = 16
 server_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 server_sock.bind(address)
 
+
+def recvfullmsg(socket, size) -> bytes:
+    while True:
+        msg, _ = socket.recvfrom(size)
+        print(msg.decode())
+    return msg
+
+
 while True:
-    msg, addr = server_sock.recvfrom(BUFFSIZE)
-    print(msg.decode())
+    recvfullmsg(server_sock, BUFFSIZE)
