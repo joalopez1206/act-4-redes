@@ -7,9 +7,9 @@ server_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 server_sock.bind(address)
 
 
-def recvfullmsg(socket, size) -> bytes:
+def recvfullmsg(receiver_socket, size) -> bytes:
     while True:
-        msg, _ = socket.recvfrom(size)
+        msg, _ = receiver_socket.recvfrom(size)
         print(msg.decode())
     return msg
 
