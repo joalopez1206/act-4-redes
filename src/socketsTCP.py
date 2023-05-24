@@ -77,6 +77,8 @@ class SocketTCP():
 
     def accept(self):
         ...
+
+
 if __name__ == '__main__':
     print(SocketTCP.create_segment_from_dict(
         SocketTCP.parse_segment('0|||0|||0|||98|||Mensaje de prueba')
