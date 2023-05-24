@@ -1,5 +1,5 @@
 import socket
-
+from socketsTCP import SocketTCP
 address = ('localhost', 8000)
 client_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 data = input("Ingrese un mensaje piola: ")
