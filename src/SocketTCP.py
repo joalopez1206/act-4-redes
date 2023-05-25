@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import random
 import socket
 
@@ -6,10 +8,9 @@ HEADERS = SYN, ACK, FIN, SEQ, DATA = 'SYN', 'ACK', 'FIN', 'SEQ', 'DATA'
 
 
 class SocketTCP():
-    def __init__(self, dest_address: tuple[str, int] = ('localhost', 8000),
-                 origin_address: tuple[str, int] = ('localhost', 8000)):
-        self.dest_address: tuple[str, int] = dest_address
-        self.origin_address: tuple[str, int] = origin_address
+    def __init__(self):
+        self.dest_address: tuple[str, int] | None = None
+        self.origin_address: tuple[str, int] | None = None
         self.sequence_number: int = 0
         self.socket: socket.socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
@@ -36,11 +37,11 @@ class SocketTCP():
         return retstr
 
     @staticmethod
-    def create_segment(syn, ack, fin, seq, data) -> str:
+    def create_segment(syn, ack, fin, seq, data='') -> str:
         return SocketTCP.create_segment_from_dict({ACK: ack, SYN: syn, FIN: fin, SEQ: seq, DATA: data})
 
     def syn_msg(self):
-        return SocketTCP.create_segment('1', 0, 0, self.sequence_number, '')
+        return SocketTCP.create_segment('1', '0', '0', f'{self.sequence_number}')
 
     @staticmethod
     def tostr_segment(data_dict: dict) -> str:
@@ -54,50 +55,73 @@ class SocketTCP():
         # Seteamos la direccion a conectar igual al address y creamos un numero de secuencia al azar
         self.dest_address = address
         self.sequence_number = random.randint(0, 100)
-
         # ahora vamos a hacer el primer handshake
         # lo primero es TIRAR un SYN y ver que pasa
         syn_msg = self.syn_msg()
+        print(f"Mensaje a enviar ---->{syn_msg}")
         self.socket.sendto(syn_msg.encode(), self.dest_address)
 
         # luego estamos atento a recibir el mensaje de los headers
-        syn_ack_msg_recv, _ = self.socket.recvfrom(19)
-
-        # recivimos el mensaje y ahora le mandamos un syn_ack (suponemos que lo envia bien! o sea hay que checkear)
+        print("Esperando mensaje")
+        syn_ack_msg_recv, self.dest_address = self.socket.recvfrom(19)
+        # recibimos el mensaje y ahora le mandamos un syn_ack (suponemos que lo envia bien! o sea hay que checkear)
         parse_msg = SocketTCP.parse_segment(syn_ack_msg_recv.decode())
+        while not (parse_msg.get(ACK) == '1' and parse_msg.get(SYN) == '1'):
+            syn_ack_msg_recv, _ = self.socket.recvfrom(19)
+            parse_msg = SocketTCP.parse_segment(syn_ack_msg_recv.decode())
+        print(f"Mensaje recibido! ----> {syn_ack_msg_recv.decode()}")
         # actualizamos el sequence number
         self.sequence_number = int(parse_msg[SEQ])
         # y ahora enviamos un ack y terminamos!
+        self.sequence_number += 1
         ack_msg = self.ack_msg()
+        print(f"Mensaje a enviar ----> {ack_msg}")
         self.socket.sendto(ack_msg.encode(), self.dest_address)
+        print("Mensaje Enviado!")
 
     def ack_msg(self):
-        self.sequence_number += 1
-        return SocketTCP.create_segment('0', '1', '0', self.sequence_number, '')
+        return SocketTCP.create_segment('0', '1', '0', f'{self.sequence_number}')
 
     def accept(self):
+        # Recibimos un mensaje a ver si llega un syn
         msg, self.dest_address = self.socket.recvfrom(19)
         headers = SocketTCP.parse_segment(msg.decode())
-        #Espero que llegue un SYN
-        while headers["SYN"] != 0:
+
+        # Si no es SYN, entonces espero que llegue un SYN
+        while headers.get("SYN") != '1':
             msg, _ = self.socket.recvfrom(19)
             headers = SocketTCP.parse_segment(msg.decode())
-        self.sequence_number+=1
-        #cuando llegue entonces mensajeo un SYN+ACK y suma a la secuencia!
-        msg_to_send = SocketTCP.create_segment('1','1','0',f'{self.sequence_number}','')
-        self.socket.sendto(msg_to_send)
-        #Espero ahora que llegue un ACK
+        print(f"Llego el mensaje SYN ----> {msg.decode()}")
+        # Aumento el numero de secuencia
+        self.sequence_number = int(headers[SEQ])
+        self.sequence_number += 1
 
-        msg, self.dest_address = self.socket.recvfrom(19)
+        # Y ahora lo que vamos a hacer es crear un nuevo socket con una nueva direccion
+        print(f"Creando socket... @ ")
+        comm_sock = SocketTCP()
+        comm_sock_address = ('localhost', self.origin_address[1] + 1)
+        comm_sock.sequence_number = self.sequence_number
+        print(f"Creando socket... @{comm_sock_address}")
+        comm_sock.bind(comm_sock_address)
+        comm_sock.dest_address = self.dest_address
+        # ¡cuando llegue entonces mensajeo un SYN+ACK y suma a la secuencia!
+        msg_to_send = SocketTCP.create_segment('1', '1', '0', f'{comm_sock.sequence_number}')
+        print(f"Enviando EL SYN+ACK ---> {msg_to_send}")
+        comm_sock.socket.sendto(msg_to_send.encode(), comm_sock.dest_address)
+
+        # Espero ahora que llegue un ACK
+        print("Esperando por el ACK del cliente")
+        msg, self.dest_address = comm_sock.socket.recvfrom(19)
         headers = SocketTCP.parse_segment(msg.decode())
-        # Espero que llegue un SYN
-        while headers["ACK"] != 0:
-            msg, _ = self.socket.recvfrom(19)
+
+        # Espero que llegue un ACK
+        while headers.get("ACK") != '1':
+            msg, _ = comm_sock.socket.recvfrom(19)
             headers = SocketTCP.parse_segment(msg.decode())
 
+        print("Three way handshake listo!")
+        return comm_sock, comm_sock_address
 
 
 if __name__ == '__main__':
-    print(SocketTCP.create_segment_from_dict(
-        SocketTCP.parse_segment(SocketTCP.create_segment('0','0','0','98','Mensaje de Prueba'))
-    ))
+    ...
