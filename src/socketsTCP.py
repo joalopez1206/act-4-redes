@@ -76,10 +76,28 @@ class SocketTCP():
         return SocketTCP.create_segment('0', '1', '0', self.sequence_number, '')
 
     def accept(self):
-        ...
+        msg, self.dest_address = self.socket.recvfrom(19)
+        headers = SocketTCP.parse_segment(msg.decode())
+        #Espero que llegue un SYN
+        while headers["SYN"] != 0:
+            msg, _ = self.socket.recvfrom(19)
+            headers = SocketTCP.parse_segment(msg.decode())
+        self.sequence_number+=1
+        #cuando llegue entonces mensajeo un SYN+ACK y suma a la secuencia!
+        msg_to_send = SocketTCP.create_segment('1','1','0',f'{self.sequence_number}','')
+        self.socket.sendto(msg_to_send)
+        #Espero ahora que llegue un ACK
+
+        msg, self.dest_address = self.socket.recvfrom(19)
+        headers = SocketTCP.parse_segment(msg.decode())
+        # Espero que llegue un SYN
+        while headers["ACK"] != 0:
+            msg, _ = self.socket.recvfrom(19)
+            headers = SocketTCP.parse_segment(msg.decode())
+
 
 
 if __name__ == '__main__':
     print(SocketTCP.create_segment_from_dict(
-        SocketTCP.parse_segment('0|||0|||0|||98|||Mensaje de prueba')
+        SocketTCP.parse_segment(SocketTCP.create_segment('0','0','0','98','Mensaje de Prueba'))
     ))
