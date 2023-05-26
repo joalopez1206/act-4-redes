@@ -17,11 +17,13 @@ HEADERS_WITHOUT_DATA = SYN, ACK, FIN, SEQ
 # Luego el largo del header es 3*4+1+1+1+5
 HEADER_SIZE = len("0|||0|||0|||00000|||")
 BUFFER_SIZE = 2 ** 4
-TIMEOUT = 3
+TIMEOUT = 500
 
 
 class SocketTCP:
     def __init__(self):
+        self.msg_recv_so_far: str = ''
+        self.largo_mensaje_a_recv: int = 0
         self.dest_address: tuple[str, int] | None = None
         self.origin_address: tuple[str, int] | None = None
         self.sequence_number: int = 0
@@ -148,12 +150,11 @@ class SocketTCP:
 
         # Primero enviamos el largo del mensaje en el
         # Primer segmento
-
         largo_msg = len(msg)
         # largo_str_len_msg = len(str(largo_msg))
         segment2send = SocketTCP.create_segment('0', '0', '0', self.sequence_number_str, str(largo_msg))
-        self.socket.sendto(segment2send, self.dest_address)
-
+        self.socket.sendto(segment2send.encode(), self.dest_address)
+        logging.debug(f"Mensaje enviado! @{self.dest_address} '{segment2send}' ")
         # Ahora esperamos un ACK y verificamos que esté all good
         while True:
             try:
@@ -164,9 +165,9 @@ class SocketTCP:
 
         # Parseamos el mensaje
         parsed_msg = SocketTCP.parse_segment(recv_msg.decode())
-
+        logging.debug(recv_msg)
         # SI no es un ACK entonces intentamos denuevo
-        while not (parsed_msg.get("ACK") == 1):
+        while not (parsed_msg.get("ACK") == '1'):
             print("Not an ACK message!")
             try:
                 msg, _ = self.socket.recvfrom(HEADER_SIZE)
@@ -203,7 +204,7 @@ class SocketTCP:
             parsed_msg = SocketTCP.parse_segment(recv_msg.decode())
 
             # Luego si no es el ACK recibimos denuevo (Creo que esto es totalmente innecesario)
-            while not (parsed_msg.get("ACK") == 1):
+            while parsed_msg.get(ACK) != '1':
                 print("Not an ACK message!")
                 try:
                     recv_msg, _ = self.socket.recvfrom(HEADER_SIZE)
@@ -212,13 +213,44 @@ class SocketTCP:
 
             parsed_msg = SocketTCP.parse_segment(recv_msg.decode())
             byte_inicial += largo_msg2send
+            msg_sent_so_far += message_slice
             # Al final sumamos lo que haya que sumar
             self.set_seq_number(int(parsed_msg[SEQ]))
             # Y seguimos enviando hasta que se envie! all el mensaje!
 
-    def recv(self, buff_size) -> int:
-        #recibir con el buffsize
-        #Entonces primero -> recibo
-        # y despues envio el ack, pero ojo que tengo que ver casos!
-        ...
+    def recv(self, buff_size) -> bytes:
+        # recibir con el buffsize
+        # Entonces primero -> recibo el primer segmento que contiene el largo si el largo es 0
+        if self.largo_mensaje_a_recv == 0:
+            msg, _ = self.socket.recvfrom(HEADER_SIZE + buff_size)
+            parsed_msg = SocketTCP.parse_segment(msg.decode())
+            self.largo_mensaje_a_recv = int(parsed_msg[DATA])
+            self.set_seq_number(int(parsed_msg[SEQ]) + len(parsed_msg[DATA]))
+            # Mandamos el ACK!
+            self.socket.sendto(self.ack_msg().encode(), self.dest_address)
+        # Ahora recibo con el buffer el segmento de datos
+        data, _ = self.socket.recvfrom(HEADER_SIZE + buff_size)
+        parsed_data = SocketTCP.parse_segment(data.decode())
+        data_recv: str = parsed_data[DATA]
 
+        # Actualizo el numero de secuencia recibido con el largo y tambien el mesnaje so far
+        self.set_seq_number(int(parsed_data[SEQ]) + len(data_recv))
+        self.msg_recv_so_far += data_recv
+
+        # Envio el mensaje de acknowledge
+        self.socket.sendto(self.ack_msg().encode(), self.dest_address)
+
+        while buff_size - len(self.msg_recv_so_far) > 0:
+            data, _ = self.socket.recvfrom(HEADER_SIZE + buff_size)
+            parsed_data = SocketTCP.parse_segment(data.decode())
+            data_recv: str = parsed_data[DATA]
+
+            # Actualizo el numero de secuencia recibido con el largo y tambien el mesnaje so far
+            self.set_seq_number(int(parsed_data[SEQ]) + len(data_recv))
+            self.msg_recv_so_far += data_recv
+
+            # Envio el mensaje de acknoledge
+            self.socket.sendto(self.ack_msg().encode(), self.dest_address)
+        retmsg = self.msg_recv_so_far.encode()
+        self.msg_recv_so_far = ''
+        return retmsg
