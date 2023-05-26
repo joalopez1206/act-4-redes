@@ -122,6 +122,10 @@ class SocketTCP():
         print("Three way handshake listo!")
         return comm_sock, comm_sock_address
 
+    def send(self, msg: bytes):
+        ...
+    def recv(self, buff_size):
+        ...
 
 if __name__ == '__main__':
     ...
