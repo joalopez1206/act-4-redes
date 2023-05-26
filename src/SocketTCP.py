@@ -251,6 +251,8 @@ class SocketTCP:
 
             # Envio el mensaje de acknoledge
             self.socket.sendto(self.ack_msg().encode(), self.dest_address)
+
+        # Como retorno esto ???
         retmsg = self.msg_recv_so_far.encode()
         self.msg_recv_so_far = ''
         return retmsg
